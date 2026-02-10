@@ -1,62 +1,64 @@
 """
-İhsan's Gate — TTS Server (gTTS Edition)
-Cloud-ready, high-quality Google Text-to-Speech (Reliable & Robust).
+İhsan's Gate — High Quality TTS Server (FastAPI + edge-tts)
+Provides neural voices like Andrew and Ava in the cloud.
 """
 
-import io
 import os
-from flask import Flask, request, jsonify, send_file
-from flask_cors import CORS
-from gtts import gTTS
+import edge_tts
+from fastapi import FastAPI, Query, HTTPException
+from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+import io
 
-app = Flask(__name__)
-CORS(app)
+app = FastAPI()
 
-VERSION = "1.0.4-GTTS"
+# CORS settings
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-@app.route('/api/tts', methods=['GET', 'POST'])
-def tts_endpoint():
+VOICES = {
+    "andrew": "en-US-AndrewNeural",
+    "ava":    "en-US-AvaNeural",
+    "brian":  "en-US-BrianNeural",
+    "emma":   "en-US-EmmaNeural",
+    "jenny":  "en-US-JennyNeural",
+    "guy":    "en-US-GuyNeural",
+}
+
+DEFAULT_VOICE = "en-US-AndrewNeural"
+
+@app.get("/api/tts")
+async def tts_endpoint(
+    text: str = Query(..., min_length=1),
+    voice: str = Query("andrew")
+):
     try:
-        if request.method == 'POST':
-            data = request.get_json(silent=True) or {}
-            text = data.get('text', '').strip()
-            voice = data.get('voice', 'en').lower()
-        else:
-            text = request.args.get('text', '').strip()
-            voice = request.args.get('voice', 'en').lower()
-
-        if not text:
-            return jsonify({"error": "Text is required."}), 400
-
-        tts = gTTS(text=text, lang='en', slow=False)
+        voice_id = VOICES.get(voice.lower(), DEFAULT_VOICE)
+        communicate = edge_tts.Communicate(text, voice_id)
         
-        audio_buffer = io.BytesIO()
-        tts.write_to_fp(audio_buffer)
-        audio_buffer.seek(0)
-        
-        return send_file(
-            audio_buffer,
-            mimetype='audio/mpeg',
-            as_attachment=False
-        )
-
+        async def audio_generator():
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    yield chunk["data"]
+                    
+        return StreamingResponse(audio_generator(), media_type="audio/mpeg")
     except Exception as e:
-        print(f"[API Error] {e}")
-        return jsonify({"error": str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.route('/api/health', methods=['GET'])
-def health_endpoint():
-    return jsonify({
-        "status": "ok", 
-        "engine": "gTTS", 
-        "version": VERSION,
-        "platform": "python-flask"
-    })
+@app.get("/api/health")
+async def health():
+    return {"status": "ok", "engine": "edge-tts", "version": "2.0.0-FastAPI"}
 
-@app.route('/')
-def root():
-    return jsonify({"service": "IhsansGate TTS (gTTS)", "version": VERSION})
+@app.get("/")
+async def root():
+    return {"service": "IhsansGate TTS (Neural)", "version": "2.0.0"}
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 3000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 3000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
