@@ -12,14 +12,7 @@ from gtts import gTTS
 app = Flask(__name__)
 CORS(app)
 
-VOICES = {
-    "andrew": "en",
-    "ava":    "en",
-    "brian":  "en",
-    "emma":   "en",
-    "jenny":  "en",
-    "guy":    "en",
-}
+VERSION = "1.0.4-GTTS"
 
 @app.route('/api/tts', methods=['GET', 'POST'])
 def tts_endpoint():
@@ -35,9 +28,6 @@ def tts_endpoint():
         if not text:
             return jsonify({"error": "Text is required."}), 400
 
-        # Create gTTS object
-        # Note: gTTS doesn't support specific neural voices by name like edge-tts,
-        # so we use standard English 'en'. We can use 'tld' for different accents.
         tts = gTTS(text=text, lang='en', slow=False)
         
         audio_buffer = io.BytesIO()
@@ -56,11 +46,16 @@ def tts_endpoint():
 
 @app.route('/api/health', methods=['GET'])
 def health_endpoint():
-    return jsonify({"status": "ok", "engine": "gTTS", "platform": "python-flask"})
+    return jsonify({
+        "status": "ok", 
+        "engine": "gTTS", 
+        "version": VERSION,
+        "platform": "python-flask"
+    })
 
 @app.route('/')
 def root():
-    return jsonify({"service": "IhsansGate TTS (gTTS)", "status": "running"})
+    return jsonify({"service": "IhsansGate TTS (gTTS)", "version": VERSION})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 3000))
