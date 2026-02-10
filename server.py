@@ -15,6 +15,7 @@ app = Flask(__name__)
 CORS(app)
 
 LAST_ERROR = None
+SELF_TEST_STATUS = "Not tested"
 
 VOICES = {
     "andrew": {"id": "en-US-AndrewNeural", "name": "Andrew", "gender": "Male"},
@@ -98,10 +99,20 @@ def voices_endpoint():
 
 @app.route('/api/health', methods=['GET'])
 def health_endpoint():
+    # Attempt a quick self-test if requested
+    test_result = "not_run"
+    if request.args.get('test') == '1':
+        try:
+            generate_audio_sync("test", "andrew")
+            test_result = "success"
+        except Exception as e:
+            test_result = f"failed: {str(e)}"
+
     return jsonify({
         "status": "ok", 
         "engine": "edge-tts", 
-        "last_error": LAST_ERROR
+        "last_error": LAST_ERROR,
+        "self_test": test_result
     })
 
 
