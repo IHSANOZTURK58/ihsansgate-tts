@@ -1,4 +1,4 @@
-flask==3.1.0
-flask-cors==5.0.1
-gTTS==2.5.4
-gunicorn==23.0.0
+flask
+flask-cors
+gTTS
+gunicorn
