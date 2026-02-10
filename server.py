@@ -4,8 +4,9 @@ Cloud-ready, free, high-quality American-accent Text-to-Speech.
 """
 
 import asyncio
+import io
 import os
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, send_file
 from flask_cors import CORS
 import edge_tts
 
@@ -23,13 +24,30 @@ VOICES = {
 
 DEFAULT_VOICE = "andrew"
 
-async def generate_speech(text: str, voice_key: str = None):
+
+async def _generate_audio(text: str, voice_key: str):
+    """Generate audio and return as bytes buffer."""
     voice_info = VOICES.get(voice_key or DEFAULT_VOICE, VOICES[DEFAULT_VOICE])
     voice_id = voice_info["id"]
+    
+    buffer = io.BytesIO()
     communicate = edge_tts.Communicate(text, voice_id)
     async for chunk in communicate.stream():
         if chunk["type"] == "audio":
-            yield chunk["data"]
+            buffer.write(chunk["data"])
+    buffer.seek(0)
+    return buffer
+
+
+def generate_audio_sync(text: str, voice_key: str):
+    """Synchronous wrapper for async audio generation (gunicorn compatible)."""
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        return loop.run_until_complete(_generate_audio(text, voice_key))
+    finally:
+        loop.close()
+
 
 @app.route('/api/tts', methods=['GET', 'POST'])
 def tts_endpoint():
@@ -48,25 +66,20 @@ def tts_endpoint():
         if len(text) > 2000:
             return jsonify({"error": "Text too long (max 2000 chars)."}), 400
 
-        def stream_audio():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            gen = generate_speech(text, voice)
-            try:
-                while True:
-                    try:
-                        chunk = loop.run_until_complete(gen.__anext__())
-                        yield chunk
-                    except StopAsyncIteration:
-                        break
-            finally:
-                loop.close()
-
-        return Response(stream_audio(), mimetype='audio/mpeg')
+        audio_buffer = generate_audio_sync(text, voice)
+        
+        return send_file(
+            audio_buffer,
+            mimetype='audio/mpeg',
+            as_attachment=False
+        )
 
     except Exception as e:
         print(f"[API Error] {e}")
-        return jsonify({"error": "Server error."}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/tts/voices', methods=['GET'])
 def voices_endpoint():
@@ -75,13 +88,16 @@ def voices_endpoint():
         "voices": [{"key": k, **v} for k, v in VOICES.items()]
     })
 
+
 @app.route('/api/health', methods=['GET'])
 def health_endpoint():
     return jsonify({"status": "ok", "engine": "edge-tts", "platform": "python-flask"})
 
+
 @app.route('/')
 def root():
     return jsonify({"service": "IhsansGate TTS", "status": "running"})
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 3000))
