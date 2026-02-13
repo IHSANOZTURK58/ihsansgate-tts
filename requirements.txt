@@ -3,3 +3,5 @@ uvicorn
 edge-tts
 python-multipart
 gunicorn
+requests
+python-dotenv

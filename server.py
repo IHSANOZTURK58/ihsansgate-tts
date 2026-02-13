@@ -9,8 +9,21 @@ from fastapi import FastAPI, Query, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import io
+import requests
+from pydantic import BaseModel
+from dotenv import load_dotenv
+
+# Load .env file
+load_dotenv()
 
 app = FastAPI()
+
+# --- CONFIG ---
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+if not GEMINI_API_KEY:
+    print("Warning: GEMINI_API_KEY not found in environment variables.")
+
 
 # CORS settings
 app.add_middleware(
@@ -57,6 +70,37 @@ async def health():
 @app.get("/")
 async def root():
     return {"service": "IhsansGate TTS (Neural)", "version": "2.0.0"}
+
+class AIRequest(BaseModel):
+    prompt: str
+    model: str = "gemini-1.5-flash"
+
+@app.post("/api/ai/generate")
+async def gemini_proxy(request: AIRequest):
+    try:
+        api_key = GEMINI_API_KEY
+        if not api_key:
+             raise HTTPException(status_code=500, detail="Server API Key is missing")
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{request.model}:generateContent?key={api_key}"
+        
+        payload = {
+            "contents": [{
+                "parts": [{"text": request.prompt}]
+            }]
+        }
+        
+        response = requests.post(url, json=payload, headers={'Content-Type': 'application/json'})
+        
+        if response.status_code != 200:
+             raise HTTPException(status_code=response.status_code, detail=f"Gemini API Error: {response.text}")
+            
+        return response.json()
+
+    except Exception as e:
+        print(f"[AI Proxy Error] {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn
